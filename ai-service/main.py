@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from typing import Optional
 import google.generativeai as genai
 import whisper
-from pydub import AudioSegment
+#from pydub import AudioSegment
 import asyncio
 
 api_lock = asyncio.Semaphore(5) # Concurrency control for API rate limits
@@ -153,28 +153,29 @@ async def generate_questions(request:QuestionResquest):
         raise HTTPException(status_code=500,detail=str(e))
     
 
+
+
 @app.post("/transcribe")
-async def transcribe_audio(file:UploadFile=File(...)):
+async def transcribe_audio(file: UploadFile = File(...)):
     try:
-        audio_bytes=await file.read()
-        audio_in_memory=io.BytesIO(audio_bytes)
-        audio_segment=AudioSegment.from_file(audio_in_memory)
-        with tempfile.NamedTemporaryFile(delete=False,suffix=".mp3") as tmp:
-            temp_audio_path=tmp.name
-            audio_segment.export(temp_audio_path,format="mp3")
         if not WHISPER_MODEL:
-            raise HTTPException(status_code=503,detail="Whisper Model is not loaded")
-        
-        result=WHISPER_MODEL.transcribe(temp_audio_path)
-                
+            raise HTTPException(status_code=503, detail="Whisper Model is not loaded")
+
+        # Save file temporarily
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
+            temp_audio_path = tmp.name
+            tmp.write(await file.read())
+
+        result = WHISPER_MODEL.transcribe(temp_audio_path)
+
         os.remove(temp_audio_path)
-        return {"transcription":result["text"].strip()}
+
+        return {"transcription": result["text"].strip()}
 
     except Exception as e:
         if 'temp_audio_path' in locals() and os.path.exists(temp_audio_path):
             os.remove(temp_audio_path)
-        raise HTTPException(status_code=500,detail=str(e))
-
+        raise HTTPException(status_code=500, detail=str(e))
 @app.post("/evaluate",response_model=EvaluationResponse)
 async def evaluate(request:EvaluationRequest):
     try:
