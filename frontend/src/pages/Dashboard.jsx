@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
 import { useSelector, useDispatch } from 'react-redux'
 import { useNavigate } from 'react-router-dom'
-import { createSession, getSessions,reset,deleteSession } from '../features/sessions/sessionSlice'
+import { createSession, getSessions, reset, deleteSession } from '../features/sessions/sessionSlice'
 import { toast } from 'react-toastify'
 import SessionCard from "../components/SessionCard"
 import axios from 'axios';
@@ -11,7 +11,7 @@ const ROLES = [
 ];
 const LEVELS = ["Junior", "Mid-Level", "Senior"];
 const TYPES = [
-  { label: 'Oral only', value: 'oral-only' }, 
+  { label: 'Oral only', value: 'oral-only' },
   { label: 'Coding Mix', value: 'coding-mix' },
   { label: 'MCQ (Multiple Choice)', value: 'mcq' }
 ];
@@ -35,21 +35,21 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (user && user.accountRole === 'recruiter') {
-        navigate('/dashboard/recruiter?tab=overview');
-        return;
+      navigate('/dashboard/recruiter?tab=overview');
+      return;
     }
     dispatch(getSessions());
 
     // Fetch Native Job Applications
     const fetchApplications = async () => {
-        try {
-            const res = await axios.get('/api/applications/me', {
-                headers: { Authorization: `Bearer ${user.token}` }
-            });
-            setActiveApps(res.data);
-        } catch (error) {
-            console.error(error);
-        }
+      try {
+        const res = await axios.get('/api/applications/me', {
+          headers: { Authorization: `Bearer ${user.token}` }
+        });
+        setActiveApps(res.data);
+      } catch (error) {
+        console.error(error);
+      }
     };
     fetchApplications();
   }, [dispatch, user, navigate]);
@@ -77,9 +77,9 @@ const Dashboard = () => {
   const viewSession = (session) => {
     if (session.status === 'completed') {
       navigate(`/review/${session._id}`);
-    } else if(session.status === 'in-progress') {
+    } else if (session.status === 'in-progress') {
       navigate(`/interview/${session._id}`);
-    }else{
+    } else {
       toast.info('Session not ready yet')
     }
   }
@@ -94,57 +94,57 @@ const Dashboard = () => {
   }
 
   const executeApplicationTest = async (app) => {
-      const job = app.jobId;
-      setLocalProcessing(true);
-      try {
-          // 1. Generate Interview Session explicitly mapped against Recruiter constraints
-          const sessionPayload = {
-              role: job.title,
-              interviewType: job.testConfig?.interviewType || 'coding-mix',
-              count: job.testConfig?.questionCount || 5,
-              level: job.testConfig?.difficulty || 'Mid-Level'
-          };
-          
-          const sessionAction = await dispatch(createSession(sessionPayload)).unwrap();
-          const sessionId = sessionAction.sessionId;
-          
-          // 2. Map generated session ID to Application
-          await axios.put(`/api/applications/${app._id}`, { sessionResultId: sessionId }, {
-              headers: { Authorization: `Bearer ${user.token}` }
-          });
+    const job = app.jobId;
+    setLocalProcessing(true);
+    try {
+      // 1. Generate Interview Session explicitly mapped against Recruiter constraints
+      const sessionPayload = {
+        role: job.title,
+        interviewType: job.testConfig?.interviewType || 'coding-mix',
+        count: job.testConfig?.questionCount || 5,
+        level: job.testConfig?.difficulty || 'Mid-Level'
+      };
 
-          // 3. Remove immediate navigation. Let the global socket handler (QUESTIONS_READY) perform the navigation once the session is truly ready.
-          // navigate(`/interview/${sessionId}`);
+      const sessionAction = await dispatch(createSession(sessionPayload)).unwrap();
+      const sessionId = sessionAction.sessionId;
 
-      } catch (error) {
-          toast.error("AI Node failed to spool custom test.");
-          setLocalProcessing(false);
-      }
+      // 2. Map generated session ID to Application
+      await axios.put(`/api/applications/${app._id}`, { sessionResultId: sessionId }, {
+        headers: { Authorization: `Bearer ${user.token}` }
+      });
+
+      // 3. Remove immediate navigation. Let the global socket handler (QUESTIONS_READY) perform the navigation once the session is truly ready.
+      // navigate(`/interview/${sessionId}`);
+
+    } catch (error) {
+      toast.error("AI Node failed to spool custom test.");
+      setLocalProcessing(false);
+    }
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-12 space-y-8 sm:space-y-12 animate-in duration-700 relative">
-      
+
       {/* FULLSCREEN AI PROCESSING OVERLAY */}
       {isProcessing && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white/90 dark:bg-[#020008]/90 backdrop-blur-xl transition-all">
-            <div className="text-center p-8 glass-panel rounded-[3rem] shadow-2xl relative overflow-hidden">
-                {/* Decorative scanning line */}
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-teal-400 dark:via-neon-cyan to-transparent animate-pulse shadow-[0_0_15px_#00f7ff]"></div>
-                
-                <div className="w-24 h-24 border-4 border-slate-200 dark:border-space-700 border-t-teal-500 dark:border-t-neon-cyan rounded-full animate-spin mx-auto shadow-glow"></div>
-                
-                <h2 className="mt-8 text-2xl sm:text-3xl font-black text-slate-800 dark:text-white font-display tracking-tight text-glow">
-                  Initializing <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-500 to-indigo-500 dark:from-neon-cyan dark:to-neon-purple">Neural Engine</span>
-                </h2>
-                
-                <p className="mt-3 text-slate-500 dark:text-slate-400 font-medium max-w-sm mx-auto">
-                  Allocating computational resources and generating customized technical evaluations...
-                </p>
-                <div className="mt-6 text-[10px] font-black tracking-[0.3em] uppercase text-teal-600 dark:text-neon-cyan animate-pulse">
-                  Please Wait
-                </div>
+          <div className="text-center p-8 glass-panel rounded-[3rem] shadow-2xl relative overflow-hidden">
+            {/* Decorative scanning line */}
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-teal-400 dark:via-neon-cyan to-transparent animate-pulse shadow-[0_0_15px_#00f7ff]"></div>
+
+            <div className="w-24 h-24 border-4 border-slate-200 dark:border-space-700 border-t-teal-500 dark:border-t-neon-cyan rounded-full animate-spin mx-auto shadow-glow"></div>
+
+            <h2 className="mt-8 text-2xl sm:text-3xl font-black text-slate-800 dark:text-white font-display tracking-tight text-glow">
+              Initializing <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-500 to-indigo-500 dark:from-neon-cyan dark:to-neon-purple">Neural Engine</span>
+            </h2>
+
+            <p className="mt-3 text-slate-500 dark:text-slate-400 font-medium max-w-sm mx-auto">
+              Allocating computational resources and generating customized technical evaluations...
+            </p>
+            <div className="mt-6 text-[10px] font-black tracking-[0.3em] uppercase text-teal-600 dark:text-neon-cyan animate-pulse">
+              Please Wait
             </div>
+          </div>
         </div>
       )}
 
@@ -168,46 +168,46 @@ const Dashboard = () => {
 
       {/* ACTIVE JOB APPLICATIONS HUB */}
       {activeApps.length > 0 && (
-         <div className="space-y-6">
-            <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-200 flex items-center px-2 font-display">
-              <span className="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-500/10 border border-indigo-500/20 rounded-lg sm:rounded-xl flex items-center justify-center mr-3 text-sm sm:text-lg">🏢</span>
-              Scheduled Applications
-            </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {activeApps.map(app => (
-                    <div key={app._id} className="glass-panel p-6 rounded-[2rem] border border-neon-cyan/20 relative shadow-[0_0_15px_rgba(0,247,255,0.05)] border-l-4 border-l-neon-cyan">
-                        <div className="flex justify-between items-start mb-4">
-                            <div>
-                                <h3 className="text-xl font-black dark:text-white text-slate-800">{app.jobId?.title || "Deleted Job"}</h3>
-                                <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">{app.status} • Scheduled for {new Date(app.scheduledDate).toLocaleDateString()}</p>
-                            </div>
-                            <span className="bg-neon-purple/10 border border-neon-purple/30 text-neon-purple font-mono uppercase text-[10px] px-3 py-1 rounded">
-                                {app.jobId?.testConfig?.interviewType ? app.jobId.testConfig.interviewType.replace('-', ' ') : "Dynamic"}
-                            </span>
-                        </div>
-                        
-                        <div className="mt-6 flex justify-end">
-                            {app.status === 'Pending' ? (
-                                <button onClick={() => executeApplicationTest(app)} disabled={isProcessing} className="bg-gradient-to-r from-neon-cyan to-blue-500 text-white font-black uppercase tracking-widest px-6 py-2 rounded-xl text-xs hover:scale-105 transition-all shadow-glow">
-                                    Execute AI Test
-                                </button>
-                            ) : (
-                                <button disabled className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black uppercase tracking-widest px-6 py-2 rounded-xl text-xs flex items-center gap-2">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"/></svg>
-                                    Test Completed
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                ))}
-            </div>
-         </div>
+        <div className="space-y-6">
+          <h2 className="text-xl sm:text-2xl font-black text-slate-800 dark:text-slate-200 flex items-center px-2 font-display">
+            <span className="w-8 h-8 sm:w-10 sm:h-10 bg-indigo-500/10 border border-indigo-500/20 rounded-lg sm:rounded-xl flex items-center justify-center mr-3 text-sm sm:text-lg">🏢</span>
+            Scheduled Applications
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {activeApps.map(app => (
+              <div key={app._id} className="glass-panel p-6 rounded-[2rem] border border-neon-cyan/20 relative shadow-[0_0_15px_rgba(0,247,255,0.05)] border-l-4 border-l-neon-cyan">
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h3 className="text-xl font-black dark:text-white text-slate-800">{app.jobId?.title || "Deleted Job"}</h3>
+                    <p className="text-xs font-bold text-slate-400 mt-1 uppercase tracking-widest">{app.status} • Scheduled for {new Date(app.scheduledDate).toLocaleDateString()}</p>
+                  </div>
+                  <span className="bg-neon-purple/10 border border-neon-purple/30 text-neon-purple font-mono uppercase text-[10px] px-3 py-1 rounded">
+                    {app.jobId?.testConfig?.interviewType ? app.jobId.testConfig.interviewType.replace('-', ' ') : "Dynamic"}
+                  </span>
+                </div>
+
+                <div className="mt-6 flex justify-end">
+                  {app.status === 'Pending' ? (
+                    <button onClick={() => executeApplicationTest(app)} disabled={isProcessing} className="bg-gradient-to-r from-neon-cyan to-blue-500 text-white font-black uppercase tracking-widest px-6 py-2 rounded-xl text-xs hover:scale-105 transition-all shadow-glow">
+                      Execute AI Test
+                    </button>
+                  ) : (
+                    <button disabled className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-black uppercase tracking-widest px-6 py-2 rounded-xl text-xs flex items-center gap-2">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                      Test Completed
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       <div className="glass-panel rounded-2xl sm:rounded-[2.5rem] overflow-hidden relative">
         {/* Subtle border glow effect */}
         <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-teal-400/50 dark:via-neon-cyan/50 to-transparent"></div>
-        
+
         <div className="bg-white/80 dark:bg-space-900/80 backdrop-blur-md px-6 py-4 sm:px-8 sm:py-6 border-b border-slate-100 dark:border-white/5 transition-colors">
           <h2 className="text-lg font-bold text-slate-800 dark:text-white flex items-center transition-colors">
             <span className="bg-teal-500 dark:bg-neon-cyan w-1.5 h-5 rounded-full mr-3 shadow-md dark:shadow-[0_0_10px_#00f7ff] transition-all"></span>
@@ -246,7 +246,7 @@ const Dashboard = () => {
             {isProcessing ? <><span className="animate-spin h-4 w-4 border-2 border-t-transparent rounded-full border-slate-500 dark:border-white"></span></> : <span className="text-sm tracking-wide">Start System</span>}
           </button>
         </form>
-      </div> 
+      </div>
 
       {/* HISTORY LIST */}
       <div className="space-y-6 pb-20 sm:pb-0">
@@ -266,7 +266,7 @@ const Dashboard = () => {
           ) : (
             <div className="space-y-4">
               {sessions.map((session) => (
-                <SessionCard key={session._id} session={session} onClick={viewSession} onDelete={handleDelete}/>
+                <SessionCard key={session._id} session={session} onClick={viewSession} onDelete={handleDelete} />
               ))}
             </div>
           )
