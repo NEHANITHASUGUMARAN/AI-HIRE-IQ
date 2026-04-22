@@ -1,72 +1,62 @@
 import uvicorn
 import os
-import io
 import json
-import tempfile
-from fastapi import FastAPI,HTTPException,UploadFile,File
+import asyncio
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from typing import Optional
 import google.generativeai as genai
-import whisper
-#from pydub import AudioSegment
-import asyncio
 
-api_lock = asyncio.Semaphore(5) # Concurrency control for API rate limits
-
+# Load env
 load_dotenv()
 
-AI_SERVICE_PORT = int(os.getenv("AI_SERVICE_PORT",8000))
-GEMINI_MODEL_NAME=os.getenv("GEMINI_MODEL_NAME","gemini-1.5-flash")
+# Config
+AI_SERVICE_PORT = int(os.getenv("AI_SERVICE_PORT", 8000))
+GEMINI_MODEL_NAME = os.getenv("GEMINI_MODEL_NAME", "gemini-1.5-flash")
+
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-app=FastAPI(title="AI Interviewer Microservice",version="1.0")
+# App
+app = FastAPI(title="AI Interviewer Microservice", version="1.0")
 
-origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-WHISPER_MODEL=None
+api_lock = asyncio.Semaphore(5)
 
-try:
-    print("Loading Whisper Model ...")
-    WHISPER_MODEL=whisper.load_model("base.en")
-    print("Whisper Model Loaded Successfully")
-except Exception as e:
-    print("Error while loading Whisper Model")
-    print(e)
+# ================= MODELS =================
 
-class QuestionResquest(BaseModel):
-    role:str="MERN Stack Developer"
-    level:str="Junior"
-    count:int=5
-    interview_type:str="coding-mix"
-
+class QuestionRequest(BaseModel):
+    role: str = "MERN Stack Developer"
+    level: str = "Junior"
+    count: int = 5
+    interview_type: str = "coding-mix"
 
 class QuestionResponse(BaseModel):
-    questions:list[str]
-    options:Optional[list[list[str]]]=None
-    model_used:str
+    questions: list[str]
+    options: Optional[list[list[str]]] = None
+    model_used: str
 
 class EvaluationRequest(BaseModel):
-    question:str
-    question_type:str
-    role:str
-    level:str
-    user_answer:Optional[str]=None
-    user_code:Optional[str]=None
+    question: str
+    question_type: str
+    role: str
+    level: str
+    user_answer: Optional[str] = None
+    user_code: Optional[str] = None
 
 class EvaluationResponse(BaseModel):
-    technicalScore:int
-    confidenceScore:int
-    aiFeedback:str
-    idealAnswer:str
+    technicalScore: int
+    confidenceScore: int
+    aiFeedback: str
+    idealAnswer: str
 
 class ResumeRequest(BaseModel):
     resume_text: str
@@ -79,214 +69,122 @@ class ResumeResponse(BaseModel):
     improvements: list[str]
     feedback: str
 
+# ================= ROUTES =================
+
 @app.get("/")
 async def root():
-    return {"message":"Hello from AI Interviewer Microservice !","model":GEMINI_MODEL_NAME}
+    return {"message": "AI Service Running 🚀", "model": GEMINI_MODEL_NAME}
 
+# ---------- QUESTIONS ----------
 
-@app.post("/generate-questions",response_model=QuestionResponse)
-async def generate_questions(request:QuestionResquest):
-   
+@app.post("/generate-questions", response_model=QuestionResponse)
+async def generate_questions(request: QuestionRequest):
     try:
-        user_prompt=(
-            f"Generate exactly {request.count} unique interview questions for a {request.level}  level {request.role} "
+        user_prompt = f"Generate exactly {request.count} interview questions for a {request.level} {request.role}"
+
+        system_prompt = (
+            "You are a professional technical interviewer. "
+            "Return ONLY questions, no explanation."
         )
-        if request.interview_type == "mcq":
-            system_prompt = (
-                "You are a professional technical interviewer. "
-                "Output ONLY a valid JSON object matching this structure: "
-                f"{{\"questions\": [{{\"question\": \"...\", \"options\": [\"A\", \"B\", \"C\", \"D\"]}}]}}. "
-                "Ensure exactly 4 options per question. NO conversational text."
-            )
-            async with api_lock:
-                ai_model = genai.GenerativeModel(
-                    model_name=GEMINI_MODEL_NAME,
-                    system_instruction=system_prompt
-                )
-                response = await ai_model.generate_content_async(
-                    user_prompt,
-                    generation_config=genai.GenerationConfig(
-                        response_mime_type="application/json",
-                        temperature=0.4
-                    )
-                )
-            raw_data = json.loads(response.text.strip())
-            q_list = [q["question"] for q in raw_data.get("questions", [])]
-            o_list = [q.get("options", []) for q in raw_data.get("questions", [])]
-            return QuestionResponse(questions=q_list[:request.count], options=o_list[:request.count], model_used=GEMINI_MODEL_NAME)
-        else:
-            if request.interview_type=="coding-mix":
-                coding_count=int(request.count*0.2)
-                oral_oral=int(request.count)-int(coding_count)
 
-                intruction=(
-                    f"The first {coding_count} questions MUST be coding challenge requiring function implementation."
-                    f"The remaining {oral_oral} questions MUST be conceptual oral questions."
-                )
-            else :
-                intruction="All questions MUST be conceptual oral questions. Do Not generate any coding or implementation challenges."
-
-            system_prompt=(
-                "You are a professional technical interviewer. "
-                "Task: Generate interview questions. No conversational text or numbering. "
-                f"Crucial : {intruction}"
-                "Output exactly one question per line. "
-            )
-            
-            async with api_lock:
-                ai_model = genai.GenerativeModel(
-                    model_name=GEMINI_MODEL_NAME,
-                    system_instruction=system_prompt
-                )
-                response = await ai_model.generate_content_async(
-                    user_prompt,
-                    generation_config=genai.GenerationConfig(
-                        temperature=0.4
-                    )
-                )
-
-            raw_text=response.text.strip()
-            questions=[q.strip() for q in raw_text.split('\n') if q.strip()]
-            return QuestionResponse(questions=questions[:request.count],model_used=GEMINI_MODEL_NAME)
-
-    except Exception as e:
-        raise HTTPException(status_code=500,detail=str(e))
-    
-
-
-
-@app.post("/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
-    try:
-        if not WHISPER_MODEL:
-            raise HTTPException(status_code=503, detail="Whisper Model is not loaded")
-
-        # Save file temporarily
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
-            temp_audio_path = tmp.name
-            tmp.write(await file.read())
-
-        result = WHISPER_MODEL.transcribe(temp_audio_path)
-
-        os.remove(temp_audio_path)
-
-        return {"transcription": result["text"].strip()}
-
-    except Exception as e:
-        if 'temp_audio_path' in locals() and os.path.exists(temp_audio_path):
-            os.remove(temp_audio_path)
-        raise HTTPException(status_code=500, detail=str(e))
-@app.post("/evaluate",response_model=EvaluationResponse)
-async def evaluate(request:EvaluationRequest):
-    try:
-        if request.question_type=="mcq":
-            assessment_intruction=(
-                "This is a multiple choice question. Evaluate the user's selected choice (Verbal Answer output string). "
-                "CRITICAL: If their chosen string implies the objectively correct technical answer, SCORE 100. Otherwise, SCORE 0. "
-            )
-        elif request.question_type=="oral":
-            assessment_intruction=(
-                "This is a conceptual oral question. Focus purely on candidate's veral explanation. "
-                "Ignore any code blocks. "
-                "CRITICAL: If the transcript is empty, nonsense (e.g. 'blah blah','testing') or irrelevent to the question, SCORE 0."
-            )
-        else:
-            assessment_intruction=(
-                "This is a coding challenge question. Evaluate the code logic and efficiency. "
-                "Use the transcription only for insight into their thought process. "
-                "CRITICAL: If the code is 'udefined',empty, just random comments, or random characters, SCORE 0."
-            )
-        
-        system_prompt=(
-            "You are a strict technical interviewer. "
-            "Do NOT hallucinate positive reviews for bad input. "
-            "CRITICAL TIME CONSTRAINT: Keep aiFeedback VERY SHORT (1-2 sentences maximum). Keep idealAnswer EXTREMELY SHORT. "
-            "RULE 1: If the answer is gibberish, irrelevant, or missing, return 'technicalScore':0 and 'confidenceScore':0. "
-            "RULE 2: For 'idealAnswer', provide a short clean string. Do NOT return a nested JSON object. "
-            f"Context:{assessment_intruction}"
-            "Respond ONLY with a JSON object. "
-            "Required keys: 'technicalScore' (0-100), 'confidenceScore' (0-100), 'aiFeedback', 'idealAnswer'. "
-        )
-        user_prompt=(
-           
-            f"Role: {request.role}\n"
-            f"Question: {request.question}\n"
-            f"Level: {request.level}\n"
-            f"Verbal Answer: {request.user_answer or 'No verbal answer provided'}\n"
-            f"Code Answer: {request.user_code or 'No code provided'}\n"
-        )
         async with api_lock:
-            ai_model = genai.GenerativeModel(
+            model = genai.GenerativeModel(
                 model_name=GEMINI_MODEL_NAME,
                 system_instruction=system_prompt
             )
-            response = await ai_model.generate_content_async(
-                user_prompt,
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json",
-                    temperature=0.0
-                )
-            )
-        response_text=response.text.strip()
-        try:
-            evaluation_data=json.loads(response_text)
-            if 'idealAnswer' in evaluation_data and not isinstance(evaluation_data['idealAnswer'],str):
-                evaluation_data['idealAnswer']=json.dumps(evaluation_data['idealAnswer'])
-            return EvaluationResponse(**evaluation_data)
-        except json.JSONDecodeError:
-            import re
-            fixed_text=re.sub(r'[\r\n\t]',' ',response_text)
-            try :
-                evaluation_data=json.loads(fixed_text)
-                if 'idealAnswer' in evaluation_data and not isinstance(evaluation_data['idealAnswer'],str):
-                    evaluation_data['idealAnswer']=json.dumps(evaluation_data['idealAnswer'])
-                return EvaluationResponse(**evaluation_data)
-            except :
-                print(f"Failed to parse response: {response_text}")
-                return EvaluationResponse(technicalScore=0,confidenceScore=0,aiFeedback="Failed to parse response",idealAnswer="Failed to parse response")
+            response = await model.generate_content_async(user_prompt)
+
+        questions = [q.strip() for q in response.text.split("\n") if q.strip()]
+        return QuestionResponse(
+            questions=questions[:request.count],
+            model_used=GEMINI_MODEL_NAME
+        )
 
     except Exception as e:
-        print(f"Failed to generate response: {e}")
-        raise HTTPException(status_code=500,detail=str(e))
-        
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ---------- EVALUATION ----------
+
+@app.post("/evaluate", response_model=EvaluationResponse)
+async def evaluate(request: EvaluationRequest):
+    try:
+        system_prompt = (
+            "You are a strict technical interviewer. "
+            "Return JSON only with keys: technicalScore, confidenceScore, aiFeedback, idealAnswer"
+        )
+
+        user_prompt = f"""
+        Role: {request.role}
+        Question: {request.question}
+        Answer: {request.user_answer}
+        Code: {request.user_code}
+        """
+
+        async with api_lock:
+            model = genai.GenerativeModel(
+                model_name=GEMINI_MODEL_NAME,
+                system_instruction=system_prompt
+            )
+            response = await model.generate_content_async(
+                user_prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+            )
+
+        data = json.loads(response.text)
+
+        return EvaluationResponse(
+            technicalScore=data.get("technicalScore", 0),
+            confidenceScore=data.get("confidenceScore", 0),
+            aiFeedback=data.get("aiFeedback", ""),
+            idealAnswer=str(data.get("idealAnswer", ""))
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ---------- RESUME ----------
+
 @app.post("/analyze-resume", response_model=ResumeResponse)
 async def analyze_resume(request: ResumeRequest):
     try:
         system_prompt = (
-            "You are an expert AI Technical Recruiter and ATS (Applicant Tracking System). "
-            "Analyze the provided Resume Text against the Job Role. "
-            "Return ONLY a JSON object exactly matching this structure with NO markdown or conversational text: "
-            "{\"atsScore\": 85, \"skillsFound\": [\"React\"], \"missingSkills\": [\"AWS\"], \"improvements\": [\"Add quantifiable metrics\"], \"feedback\": \"Good fit but...\"} "
-            "atsScore MUST be an integer between 0 and 100 based on standard industry ATS evaluation metrics."
+            "You are an ATS system. Return JSON only with atsScore, skillsFound, missingSkills, improvements, feedback"
         )
-        user_prompt = f"Job Role: {request.job_role}\n\nResume Text:\n{request.resume_text}"
+
+        user_prompt = f"""
+        Job Role: {request.job_role}
+        Resume: {request.resume_text}
+        """
 
         async with api_lock:
-            ai_model = genai.GenerativeModel(
+            model = genai.GenerativeModel(
                 model_name=GEMINI_MODEL_NAME,
                 system_instruction=system_prompt
             )
-            response = await ai_model.generate_content_async(
+            response = await model.generate_content_async(
                 user_prompt,
                 generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json",
-                    temperature=0.2
+                    response_mime_type="application/json"
                 )
             )
-        
-        response_text = response.text.strip()
-        data = json.loads(response_text)
-        
+
+        data = json.loads(response.text)
+
         return ResumeResponse(
-            atsScore=int(data.get("atsScore", data.get("experienceMatch", 50))),
+            atsScore=int(data.get("atsScore", 50)),
             skillsFound=data.get("skillsFound", []),
             missingSkills=data.get("missingSkills", []),
             improvements=data.get("improvements", []),
-            feedback=data.get("feedback", "No feedback provided.")
+            feedback=data.get("feedback", "")
         )
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-        
+
+
+# ================= RUN =================
 
 if __name__ == "__main__":
-    uvicorn.run(app,host="0.0.0.0",port=AI_SERVICE_PORT)
+    uvicorn.run(app, host="0.0.0.0", port=AI_SERVICE_PORT)
